@@ -287,6 +287,132 @@ Finally, to export the interactions into a text file, use:
 
 This function automatically exports ALL interactions (significant or not) into a text file. Additionally, if there is a control file, this function prints the experimental and control interactions into two separate text files. The name is determined based on the name that was assigned for control and experimental labels when making the r3Cseq object.
 
+Read the interactions .txt file generated
+
+I am only interested in the interactions in the same chr of your bait, in this case it's **chr15**
+
+So I will keep the interactions in that chr, filter out the non-significant ones (with a q-value > 0.1)
+
+And then I will also going to filter interactions that are further away than 100kb from the promoter of RCCD1 (the bait)
+
+And the interactions that are closer than 3kb from the promoter as well. (this is because of the technology of 4C, you can't tell if these interactions that are very close are artifacts or real ones, most likely self-ligation products which we are not interested)
+
+In the end after you do this you'll have a list of interactions in the format of `chr` `start` `end`
+
+Meaning the start and the end of where the promoter of your bait gene is interacting.
+
+So in the end you should have a matrix with chr start end again, but now your start will be all the same because it's the promoter of the gene, and the end will be the middle of each interaction.
+
+You can use the start of that gene as the bait.
+
+Meaning the start and the end of where the promoter of your bait gene is interacting.
+
+So in the end you should have a matrix with chr start end again, but now your start will be all the same because it's the promoter of the gene, and the end will be the middle of each interaction.
+
+You can use the start of that gene as the bait.
+
+```r
+## Loading Libraries
+library(r3Cseq)
+library(BSgenome.Hsapiens.UCSC.hg19.masked)
+library(GenomicRanges)
+library(Homo.sapiens)
+library(dplyr)
+library(rtracklayer)
+
+## MCF interactions
+mcf.int <- read.table("MCF7_DpnII.interaction.txt", header = T)
+mcf_data <- mcf.int[mcf.int$chromosome == "chr15" & !mcf.int$q.value > 0.9, ] #Filtering the interactions within chr15 and q-value < 0.1
+
+## Genomic Location of RCCD1 with entrez gene id
+id <- "91433"
+rccdGene <- genes(TxDb.Hsapiens.UCSC.hg19.knownGene,
+                  filter=list(gene_id=id))
+
+## start and end of the gene (RCCD1)
+rccdPromoter <- start(rccdGene)
+mcf_end <- ((mcf_data$start+mcf_data$end)/2)
+
+## Genomic Ranges interaction without the bait
+mcf_test <- makeGRangesFromDataFrame(mcf_data)
+rccd_test <- GRanges(seqnames = "chr15", ranges = IRanges(rccdPromoter, rccdPromoter+1))
+mcf_int <- GenomicRanges::distance(rccd_test, mcf_test)
+mcf_int2 <- mcf_test[GenomicRanges::distance(rccd_test, mcf_test) <= 70000 & GenomicRanges::distance(rccd_test, mcf_test) >= 3000] # 55 significant interactions
+
+## Genomic Ranges interaction with bait
+mcf <- cbind(rccdPromoter, mcf_end)
+mcf_2 <- cbind(mcf, mcf_data$chromosome)
+colnames(mcf_2) <- c("end", "start", "chromosome")
+mcf_2 <- mcf_2[, c(3, 2, 1)]
+mcf_3 <- as.data.frame(mcf_2)
+mcf_3$start <- as.integer(mcf_3$start)
+mcf_3$end <- as.integer(mcf_3$end)
+sapply(mcf_3, class)
+
+mcf_4 <- mcf_3
+mcf_4$end <- pmax(mcf_3$start, mcf_3$end)
+mcf_4$start <- pmin(mcf_3$start, mcf_3$end) # 97 interactions
+
+mcf_4$diff <- (mcf_4$end - mcf_4$start)
+mcf_5 <- mcf_4[mcf_4$diff >= 3000 & mcf_4$diff <= 70000,] #Removing interactions longer than 100kb and shorter than 3kb from the bait
+mcf_5$diff <- NULL
+mcf_loops <- makeGRangesFromDataFrame(mcf_5)  # 55 interactions
+
+#####################################################################################
+#####################################################################################
+
+## BT549 interactions
+bt.int <- read.table("BT_DpnII.interaction.txt", header = T)
+bt_data <- bt.int[bt.int$chromosome == "chr15" & !bt.int$q.value > 0.9, ] #Filtering the interactions within chr15 and q-value < 0.1
+
+## Genomic Location of RCCD1 with entrez gene id
+id <- "91433"
+rccdGene <- genes(TxDb.Hsapiens.UCSC.hg19.knownGene,
+                  filter=list(gene_id=id))
+
+## start and end of the gene (RCCD1)
+rccdPromoter <- start(rccdGene)
+bt_end <- ((bt_data$start+bt_data$end)/2)
+
+## Genomic Ranges interaction without the bait
+bt_test <- makeGRangesFromDataFrame(bt_data)
+rccd_test <- GRanges(seqnames = "chr15", ranges = IRanges(rccdPromoter, rccdPromoter+1))
+bt_int <- GenomicRanges::distance(rccd_test, bt_test)
+bt_int2 <- bt_test[GenomicRanges::distance(rccd_test, bt_test) <= 70000 & GenomicRanges::distance(rccd_test, bt_test) >= 3000] 
+
+## Genomic Ranges interaction with bait
+bt <- cbind(rccdPromoter, bt_end)
+bt_2 <- cbind(bt, bt_data$chromosome)
+colnames(bt_2) <- c("end", "start", "chromosome")
+bt_2 <- bt_2[, c(3, 2, 1)]
+bt_3 <- as.data.frame(bt_2)
+bt_3$start <- as.integer(bt_3$start)
+bt_3$end <- as.integer(bt_3$end)
+sapply(bt_3, class)
+
+bt_4 <- bt_3
+bt_4$end <- pmax(bt_3$start, bt_3$end)
+bt_4$start <- pmin(bt_3$start, bt_3$end)  # 96 interactions
+
+bt_4$diff <- (bt_4$end - bt_4$start)
+bt_5 <- bt_4[bt_4$diff >= 3000 & bt_4$diff <= 70000,] #Removing interactions longer than 100kb and shorter than 3kb from the bait
+bt_5$diff <- NULL
+bt_loops <- makeGRangesFromDataFrame(bt_5) # 53 interactions
+
+## counting overlap interactions in Breast Cancer cell lines
+breast_over <- GenomicRanges::intersect(mcf_int2, bt_int2) 
+breast_over2 <- GenomicRanges::intersect(mcf_loops, bt_loops)
+
+## Overlap interactions between KURA, UWB, MCF & BT549
+overall_over <- GenomicRanges::intersect(breast_over, ovarian_over)
+## Converting GRanges to bed file
+rtracklayer::export.bed(breast_over, "Breast cell lines overlap interactions.bed")
+rtracklayer::export.bed(overall_over, "All 4 cell lines overlap interactions.bed")
+
+rtracklayer::export.bed(mcf_loops, "MCF_arc_interactions.bed")
+rtracklayer::export.bed(bt_loops, "BT_arc_interactions.bed")
+```
+
 
 
 
